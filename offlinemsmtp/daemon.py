@@ -151,8 +151,7 @@ class Daemon:
             # Search for the subject in the message_content
             subject = "<no subject>"
             for line in message_content.decode("utf-8").split("\n"):
-                subject_match = self.subject_re.match(line)
-                if subject_match:
+                if subject_match := self.subject_re.match(line):
                     subject = subject_match.group(1)
 
             util.notify(
