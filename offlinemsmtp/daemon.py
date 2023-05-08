@@ -79,7 +79,7 @@ class Daemon:
             sending_notification = util.notify(f"Sending {message_path}...", timeout=600000)
 
             # Send the message.
-            logging.debug(self.get_msmtp_command(msmtp_args))
+            # logging.debug(self.get_msmtp_command(msmtp_args))
             send_cmd = run(self.get_msmtp_command(msmtp_args), input=message_content, check=False)
             if sending_notification:
                 sending_notification.close()

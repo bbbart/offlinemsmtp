@@ -7,6 +7,7 @@ license = "GPL-3.0-or-later"
 readme = "README.md"
 repository = "https://github.com/sumnerevans/offlinemsmtp"
 keywords = ["email", "msmtp", "offline"]
+include = [ { path = "offlinemsmtp/*" } ]
 classifiers = [
     #   3 - Alpha
     #   4 - Beta
@@ -28,6 +29,7 @@ offlinemsmtp = "offlinemsmtp.__main__:main"
 [tool.poetry.dependencies]
 python = "^3.8"
 inotify = "^0.2.10"
+PyGObject = "^3.42.2"
 
 [tool.poetry.group.dev.dependencies]
 black = "^21.12b0"
