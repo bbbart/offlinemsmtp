@@ -11,9 +11,8 @@ _APP_NAME = "offlinemsmtp"
 
 
 def notify(message, timeout=None, urgency=Notify.Urgency.LOW):
-    """Creates and shows a ``gi.repository.Notify.Notification`` object."""
+    """Create and show a ``gi.repository.Notify.Notification`` object."""
     global NOTIFICATIONS_INITIALIZED
-    logging.info(message)
 
     if SILENT:
         return None
