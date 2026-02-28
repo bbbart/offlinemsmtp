@@ -1,11 +1,12 @@
 [build-system]
-build-backend = "flit_core.buildapi"
+build-backend = "hatchling.build"
 requires = [
-  "flit_core<4,>=3.2",
+  "hatchling",
 ]
 
 [project]
 name = "offlinemsmtp"
+description = "msmtp wrapper allowing for offline use"
 readme = "README.md"
 keywords = [
   "email",
@@ -29,13 +30,13 @@ classifiers = [
   "Topic :: Communications :: Email :: Mail Transport Agents",
 ]
 dynamic = [
-  "description",
   "version",
 ]
 dependencies = [
   "inotify",
 ]
-[project.optional-dependencies]
+
+[dependency-groups]
 dev = [
   "black",
   "flake8",
@@ -44,19 +45,22 @@ dev = [
   "flake8-comprehensions",
   "flake8-pep3101",
   "flake8-print",
-  "flit",
   "isort",
   "mypy",
-  "pip-tools",
   "pre-commit",
   "requirements-parser",
   "termcolor",
 ]
+
 [project.urls]
 "Bug Tracker" = "https://github.com/sumnerevans/offlinemsmtp/issues"
 Homepage = "https://github.com/sumnerevans/offlinemsmtp"
+
 [project.scripts]
 offlinemsmtp = "offlinemsmtp.__main__:main"
+
+[tool.hatch.version]
+path = "offlinemsmtp/__init__.py"
 
 [tool.black]
 line-length = 99

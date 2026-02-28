@@ -28,31 +28,31 @@ merge it in.
 
 ### Installing Development Dependencies
 
-This project uses [pip-tools][] and [flit][] to manage dependences for both the
-core package as well as for development. You only need to install `pip-tools` or
-`flit` if you want to change any of the project's dependencies.
+This project uses [uv](https://docs.astral.sh/uv/) for dependency management
+and building. Install uv, then run:
 
-### Installation
-
-It is recommended to develop within a virtual environment. See [the docs for
-setting up a virtual
-environment](https://docs.python.org/3/library/venv.html#creating-virtual-environments)
-
-Then, after activating your virtual environment, run:
 ```
-$ pip install -r requirements.txt -r dev-requirements.txt
-$ pip install -e .
+$ uv sync
 ```
+
 to install the development dependencies as well as install `offlinemsmtp` into
-the virtual environment as editable.
+the virtual environment.
+
+**Note:** a `.envrc` is provided for use with [direnv](https://direnv.net/) to
+automatically run `uv sync` and activate the virtual environment when
+in the project directory.
 
 ### Running
 
-Run:
+Activate the virtual environment:
 ```
-$ offlinemsmtp
+$ source .venv/bin/activate
 ```
-to launch the application.
+
+Or use `uv run` to run commands within the virtual environment:
+```
+$ uv run offlinemsmtp
+```
 
 ### Code Style
 
@@ -72,8 +72,8 @@ $ pre-commit install --install-hooks
 ```
 
 Although you can technically do all of the formatting yourself, it is
-recommended that you use the following tools (they are included in
-`all-requirements.txt`). The pre-commit hooks and CI process uses these to check
+recommended that you use the following tools (they are automatically installed
+by `uv sync`). The pre-commit hooks and CI process uses these to check
 all commits, so you will probably want these so you don't have to wait for
 results of the build before knowing if your code is the correct style.
 
@@ -135,10 +135,7 @@ is as follows:
 
 [black]: https://github.com/psf/black
 [flake8]: https://github.com/pycqa/flake8
-[flit]: https://github.com/pypa/flit
 [isort]: https://pycqa.github.io/isort/
 [matrix]: https://matrix.to/#/!veTDkgvBExJGKIBYlU:matrix.org?via=matrix.org
 [mypy]: http://mypy-lang.org/
-[pip-tools]: https://github.com/jazzband/pip-tools
-[pyenv]: https://github.com/pyenv/pyenv
 [pre-commit]: https://pre-commit.com/
