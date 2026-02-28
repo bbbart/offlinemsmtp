@@ -108,7 +108,9 @@ class Daemon:
 
     def get_msmtp_command(self, msmtp_args, pretend=False):
         """Full msmtp command to run to send emails."""
-        args = ["/usr/bin/env", "msmtp", "--debug"]
+        args = ["/usr/bin/env", "msmtp"]
+        if pretend or logging.getLogger().isEnabledFor(logging.DEBUG):
+            args.append("--debug")
         if pretend:
             args.append("-P")
         args += ["-C", str(self.config_file), *msmtp_args.split()]
