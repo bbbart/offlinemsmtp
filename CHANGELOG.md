@@ -1,3 +1,15 @@
+# Version 0.4.1
+
+* Only pass `--debug` to msmtp when log level is set to DEBUG, preventing
+  full email contents from being logged to the journal.
+
+* Infrastructure/DX Changes
+
+  * Migrated build system from flit/pip-tools to uv + hatchling
+  * Re-added `PyGObject` as a declared dependency (was dropped during flit
+    migration)
+  * Forked to https://github.com/bbbart/offlinemsmtp
+
 # Version 0.4.0
 
 * **Dependency change**: the `watchdog` dependency has been replaced by
