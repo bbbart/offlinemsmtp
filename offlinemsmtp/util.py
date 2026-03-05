@@ -1,5 +1,4 @@
 import logging
-import sys
 
 import gi
 
@@ -33,5 +32,5 @@ def notify(message, timeout=None, urgency=Notify.Urgency.LOW):
         notification.show()
         return notification
     except Exception as e:
-        logging.error(f"failed to show notification, panicking: {e}")
-        sys.exit(1)
+        logging.warning(f"failed to show notification: {e}")
+        return None
