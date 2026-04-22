@@ -138,6 +138,9 @@ class Daemon:
             if host and port:
                 break
 
+        if not host or not port:
+            return False
+
         # Try to connect to the socket.
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(2)  # 2 second timeout
