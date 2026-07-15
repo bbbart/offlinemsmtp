@@ -1,3 +1,22 @@
+# Version 0.4.4
+
+* **Fixed silent mail loss when enqueueing multiple messages within the same
+  second.** Outbox filenames had second resolution, so a second message
+  truncated the first message's file while the daemon could already be
+  sending it; the daemon's post-send unlink then destroyed the second
+  message entirely, and its queued inotify event was skipped as
+  "file no longer exists". Filenames now include microseconds and the PID.
+* Messages are now written to a hidden temporary file and atomically renamed
+  into the outbox, so the daemon can never pick up a partially written
+  message. The daemon reacts to `IN_MOVED_TO` (in addition to
+  `IN_CLOSE_WRITE`) and ignores dotfiles. **Upgrade the daemon and client
+  together**: an old daemon will not notice messages enqueued by a new
+  client until it is restarted.
+* The queue flush is now serialized with a lock; previously the inotify
+  watcher thread and the periodic retry loop could flush concurrently.
+* Fixed a crash on daemon startup when `--outbox-directory` was passed on
+  the command line (string was not converted to a `Path`).
+
 # Version 0.4.1
 
 * Only pass `--debug` to msmtp when log level is set to DEBUG, preventing
