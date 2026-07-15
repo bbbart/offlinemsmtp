@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -78,8 +79,18 @@ def main():
     else:
         root_dir = Path(args.dir).resolve()
         root_dir.mkdir(parents=True, exist_ok=True)
-        filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        with open(root_dir.joinpath(filename), "w+") as f:
+        # The filename must be unique per message: with a second-resolution
+        # timestamp, two messages enqueued within the same second share a
+        # filename, so the second truncates the first while the daemon may
+        # already be sending it — after which the daemon's unlink destroys
+        # the second message entirely. Microseconds plus the PID rule out
+        # collisions.
+        filename = f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S.%f')}-{os.getpid()}"
+        # Write to a hidden temporary file and rename it into place so that
+        # the message appears in the outbox atomically and complete. The
+        # daemon ignores dotfiles and picks the message up on IN_MOVED_TO.
+        tmp_path = root_dir.joinpath(f".{filename}.tmp")
+        with open(tmp_path, "x") as f:
             # Write the arguments on the first line so that the daemon can pass
             # them through.
             f.write(" ".join(rest_args) + "\n")
@@ -87,6 +98,7 @@ def main():
             # Write all of stdout to the file.
             for line in sys.stdin:
                 f.write(line)
+        tmp_path.rename(root_dir.joinpath(filename))
 
 
 if __name__ == "__main__":

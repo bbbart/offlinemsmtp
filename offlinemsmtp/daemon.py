@@ -32,10 +32,18 @@ class Daemon:
         self.send_mail_file = Path(args.send_mail_file).resolve() if args.send_mail_file else None
         self.root_dir = Path(args.dir).resolve()
 
+        # Serializes flush_queue between the inotify watcher thread and the
+        # periodic flush in the main loop.
+        self.flush_lock = threading.Lock()
+
         # Initialize the queue
         self.queue = Queue()
         self.root_dir.mkdir(parents=True, exist_ok=True)
         for file in self.root_dir.iterdir():
+            if file.name.startswith("."):
+                # Skip hidden files: in-progress (or abandoned) enqueue
+                # temporary files.
+                continue
             self.queue.put(self.root_dir.joinpath(file))
 
     def send_enabled(self):
@@ -54,6 +62,10 @@ class Daemon:
 
     def flush_queue(self):
         """Send all emails in the queue."""
+        with self.flush_lock:
+            self._flush_queue()
+
+    def _flush_queue(self):
         if not self.send_enabled():
             util.notify("Sending email disabled", timeout=5000)
             return
@@ -173,13 +185,17 @@ class Daemon:
         # Listen on the outbox directory for new files.
         daemon = Daemon(args)
         observer = inotify.adapters.Inotify()
-        observer.add_watch(args.dir.resolve().as_posix())
+        observer.add_watch(Path(args.dir).resolve().as_posix())
 
         def watch_outbox(daemon, observer):
             """Watch the outbox directory and act upon files being added there."""
             for event in observer.event_gen(yield_nones=False):
                 _, type_names, path, filename = event
-                if "IN_CLOSE_WRITE" in type_names:
+                if filename.startswith("."):
+                    # Enqueue temporary files are hidden; the message is
+                    # renamed into place once it is completely written.
+                    continue
+                if "IN_CLOSE_WRITE" in type_names or "IN_MOVED_TO" in type_names:
                     daemon.on_created(Path(path) / filename)
 
         observer_thread = threading.Thread(
