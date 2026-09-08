@@ -15,6 +15,10 @@ connection.
 * Drop-in replacement for `msmtp` in your mutt config.
 * Only attempts to send the queued email message if it can connect to the
   configured SMTP server.
+* Tells temporary delivery failures apart from permanent ones: a message that
+  the server rejects temporarily stays in the queue and is retried, while one
+  it rejects permanently is set aside instead of being retried forever. See
+  [Permanently rejected mail](#permanently-rejected-mail).
 * When a new email message comes into the queue and you are already online,
   `offlinemsmtp` will send it immediately.
 * Integrates with system notifications so that you are notified when mail is
@@ -78,6 +82,36 @@ To use offlinemsmtp with mutt, just replace `msmtp` in your mutt configuration
 file with `offlinemsmtp`. Here is an example:
 
     set sendmail = "offlinemsmtp -a personal"
+
+### Permanently rejected mail
+
+Once the SMTP server accepts a message, it is removed from the outbox. If the
+server rejects it *temporarily* — an SMTP 4xx reply, such as greylisting or a
+mailbox that is temporarily full — the message stays in the queue and is
+retried at every interval, as does a message that could not be sent because
+the server was unreachable.
+
+If the server rejects the message *permanently* — an SMTP 5xx reply, such as an
+address that does not exist or a message over the server's size limit — then
+retrying can never succeed. Instead of retrying forever, `offlinemsmtp` moves
+the message into the `failed` subdirectory of the outbox and shows a critical
+notification. Alongside the message it writes a `.err` file containing
+`msmtp`'s output, including the server's own reply:
+
+    ~/.offlinemsmtp-outbox/failed/
+    ├── 2026-09-08_14-22-57.998001-4703
+    └── 2026-09-08_14-22-57.998001-4703.err
+
+    $ cat ~/.offlinemsmtp-outbox/failed/2026-09-08_14-22-57.998001-4703.err
+    exit code: 65
+    msmtp: recipient address nosuch@example.com not accepted by the server
+    msmtp: server message: 550 5.1.1 <nosuch@example.com>: no such user here
+    msmtp: could not send mail (account personal from /home/you/.msmtprc)
+
+Nothing in `failed` is ever deleted, so no mail is lost. It is up to you to
+inspect these messages and clean them up. To retry one — after fixing the
+recipient's address, for instance — move the message file (not its `.err` file)
+back into the outbox directory and the daemon will pick it up again.
 
 ### Command Line Arguments
 
