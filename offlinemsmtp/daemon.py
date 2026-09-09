@@ -20,6 +20,30 @@ from gi.repository import Notify
 
 from offlinemsmtp import util
 
+# msmtp uses the exit codes from ``sysexits.h``. Two of them mean that the
+# failure is permanent *for this particular message*, so that retrying it can
+# never succeed:
+#
+# * ``EX_DATAERR`` (65): the server rejected the envelope or the DATA command
+#   with a 5xx reply. Sending mail is the only thing msmtp uses this code for,
+#   so it is an exact match for "permanent SMTP failure".
+# * ``EX_USAGE`` (64): msmtp refused the arguments stored with the message
+#   (``no recipients found``, for example). Those arguments were recorded when
+#   the message was enqueued, so they will never change.
+#
+# Every other exit code is either transient or fixable without touching the
+# message, so those messages stay in the queue. That notably includes
+# ``EX_UNAVAILABLE`` (69), which is what a 4xx reply maps to, as well as
+# ``EX_TEMPFAIL`` (75), ``EX_NOHOST`` (68), ``EX_IOERR`` (74), ``EX_NOPERM``
+# (77, authentication failure) and ``EX_CONFIG`` (78).
+EX_USAGE = 64
+EX_DATAERR = 65
+PERMANENT_FAILURE_EXIT_CODES = frozenset({EX_USAGE, EX_DATAERR})
+
+# Messages that can never be sent are moved to this subdirectory of the outbox,
+# rather than being retried forever or thrown away.
+FAILED_DIR_NAME = "failed"
+
 
 class Daemon:
     """Listens for changes to the outbox directory."""
@@ -31,6 +55,7 @@ class Daemon:
         self.config_file = Path(args.file).resolve()
         self.send_mail_file = Path(args.send_mail_file).resolve() if args.send_mail_file else None
         self.root_dir = Path(args.dir).resolve()
+        self.failed_dir = self.root_dir.joinpath(FAILED_DIR_NAME)
 
         # Serializes flush_queue between the inotify watcher thread and the
         # periodic flush in the main loop.
@@ -44,7 +69,11 @@ class Daemon:
                 # Skip hidden files: in-progress (or abandoned) enqueue
                 # temporary files.
                 continue
-            self.queue.put(self.root_dir.joinpath(file))
+            if not file.is_file():
+                # Skip the failed/ directory, and anything else that is not a
+                # message.
+                continue
+            self.queue.put(file)
 
     def send_enabled(self):
         """Is the file allowing us to send out emails present?
@@ -73,50 +102,180 @@ class Daemon:
         failed = []
         while not self.queue.empty():
             message_path = self.queue.get()
-            if not message_path.exists():
-                # It was removed, nothing we can do about that.
-                continue
-
-            # Open the message.
-            with open(message_path, "rb") as message_content:
-                msmtp_args = message_content.readline().decode()
-                message_content = message_content.read()
-
-            if not self.can_send_message(msmtp_args, message_content):
-                failed.append(message_path)
-                continue
-
-            # Create a sending notification that lives "forever". It will be
-            # closed when the msmtp process completes.
-            sending_notification = util.notify(f"Sending {message_path}...", timeout=600000)
-
-            # Send the message.
-            logging.debug(self.get_msmtp_command(msmtp_args))
-            send_cmd = run(self.get_msmtp_command(msmtp_args), input=message_content, check=False)
-            if sending_notification:
-                sending_notification.close()
-
-            # Determine whether or not the send was successful or not.
-            if send_cmd.returncode == 0:
-                util.notify("Message sent successfully. Removing from queue.")
-                message_path.unlink()
-            else:
+            try:
+                keep_queued = self.send_message(message_path)
+            except Exception:
+                # One message must never take down the flush, let alone the
+                # daemon. _flush_queue also runs on the inotify thread, where
+                # an uncaught exception kills the watcher and new messages go
+                # unnoticed until the daemon is restarted; from the main loop
+                # it ends the process. Reading a message or deleting it can
+                # fail on a full or read-only filesystem, and msmtp may not be
+                # installed at all.
+                #
+                # The message stays in the queue: whatever went wrong, it is
+                # better to report it and retry than to set aside mail that is
+                # probably still deliverable once the cause is fixed.
+                logging.exception("Could not process %s", message_path)
                 util.notify(
-                    f"Message did not send. Putting message back into the "
-                    f"queue to try later.\n"
-                    f"Return Code: {send_cmd.returncode}\n",
+                    f"Could not process {message_path}. Keeping it in the "
+                    f"queue; see the log for details.",
                     timeout=30000,  # 30 seconds
                     urgency=Notify.Urgency.CRITICAL,
                 )
+                keep_queued = True
+
+            if keep_queued:
                 failed.append(message_path)
 
         # Re-enqueue the failed messages.
         for file in failed:
             self.queue.put(file)
 
+    def send_message(self, message_path):
+        """Try to send a single queued message.
+
+        Returns whether the message should stay in the queue.
+        """
+        if not message_path.exists():
+            # It was removed, nothing we can do about that.
+            return False
+
+        # Open the message.
+        with open(message_path, "rb") as message_file:
+            msmtp_args = message_file.readline().decode()
+            message_content = message_file.read()
+
+        if not self.can_send_message(msmtp_args, message_content):
+            return True
+
+        # Create a sending notification that lives "forever". It will be
+        # closed when the msmtp process completes.
+        sending_notification = util.notify(f"Sending {message_path}...", timeout=600000)
+
+        # Send the message.
+        try:
+            logging.debug(self.get_msmtp_command(msmtp_args))
+            send_cmd = run(
+                self.get_msmtp_command(msmtp_args),
+                input=message_content,
+                stderr=PIPE,
+                check=False,
+            )
+        finally:
+            # Close it even if msmtp could not be run at all, so that the
+            # notification does not sit there for its full ten minutes.
+            if sending_notification:
+                sending_notification.close()
+
+        # msmtp's diagnostics used to go to the daemon's own stderr. They are
+        # captured now, so log them to keep them visible. msmtp already
+        # prefixes every line it writes with "msmtp:".
+        error_output = send_cmd.stderr.decode("utf-8", errors="replace").strip()
+        if error_output:
+            logging.warning("%s", error_output)
+
+        # Determine whether or not the send was successful or not.
+        if send_cmd.returncode == 0:
+            util.notify("Message sent successfully. Removing from queue.")
+            try:
+                message_path.unlink()
+            except OSError as e:
+                # The message did go out, so it must not be sent again: this
+                # is the one failure where keeping it queued is wrong, because
+                # every retry would deliver another copy.
+                util.notify(
+                    f"Message was sent but {message_path} could not be "
+                    f"removed: {e}\n"
+                    f"Delete it by hand, otherwise it is sent again the next "
+                    f"time the daemon starts.",
+                    timeout=30000,  # 30 seconds
+                    urgency=Notify.Urgency.CRITICAL,
+                )
+            return False
+
+        if send_cmd.returncode in PERMANENT_FAILURE_EXIT_CODES:
+            # Retrying is pointless, so take the message out of the queue
+            # instead of letting it fail again every interval. If it cannot be
+            # moved aside, keep it queued rather than lose track of it.
+            return not self.fail_message(message_path, send_cmd.returncode, error_output)
+
+        util.notify(
+            f"Message did not send. Putting message back into the "
+            f"queue to try later.\n"
+            f"{self.describe_failure(send_cmd.returncode, error_output)}",
+            timeout=30000,  # 30 seconds
+            urgency=Notify.Urgency.NORMAL,
+        )
+        return True
+
     host_re = re.compile("host = (.*)")
     port_re = re.compile("port = (.*)")
     subject_re = re.compile("Subject: (.*)")
+    server_message_re = re.compile("^msmtp: server message: (.*)$", re.MULTILINE)
+
+    @classmethod
+    def describe_failure(cls, returncode, error_output):
+        """Short description of why msmtp failed, to show in a notification.
+
+        The SMTP server's own reply says a lot more than the exit code does, so
+        it is preferred when msmtp reported one.
+        """
+        server_message = cls.server_message_re.search(error_output)
+        if server_message:
+            return server_message.group(1)
+        return f"Return Code: {returncode}"
+
+    def fail_message(self, message_path, returncode, error_output):
+        """Move a message that can never be sent out of the queue.
+
+        It goes to the ``failed`` subdirectory of the outbox, next to a
+        ``.err`` file holding msmtp's diagnostics, so that the mail itself is
+        not lost and the reason for the rejection can still be looked up.
+
+        Returns whether the message was moved. A read-only or full outbox must
+        not take the daemon down with it: this runs on the inotify thread as
+        well as in the main loop, and an exception there would kill the watcher
+        and leave new messages unnoticed. The caller keeps the message queued
+        instead, which is what it did before permanent failures were
+        recognized, so nothing is lost while the outbox is unwritable.
+        """
+        try:
+            self.failed_dir.mkdir(parents=True, exist_ok=True)
+
+            # Message names contain microseconds and the PID, so a name that is
+            # already taken should be impossible. Pick another one rather than
+            # overwrite mail if it happens anyway.
+            failed_path = self.failed_dir.joinpath(message_path.name)
+            attempt = 1
+            while failed_path.exists():
+                failed_path = self.failed_dir.joinpath(f"{message_path.name}.{attempt}")
+                attempt += 1
+
+            # Write the diagnostics first: a stray .err file is harmless (a
+            # later attempt overwrites it), whereas a failed message without
+            # one gives no clue as to what went wrong.
+            failed_path.with_name(f"{failed_path.name}.err").write_text(
+                f"exit code: {returncode}\n{error_output}\n"
+            )
+            message_path.rename(failed_path)
+        except OSError as e:
+            util.notify(
+                f"Message was permanently rejected but could not be moved to "
+                f"{self.failed_dir}: {e}\n"
+                f"Keeping it in the queue.",
+                timeout=30000,  # 30 seconds
+                urgency=Notify.Urgency.CRITICAL,
+            )
+            return False
+
+        util.notify(
+            f"Message permanently rejected; moved to {failed_path}.\n"
+            f"{self.describe_failure(returncode, error_output)}",
+            timeout=30000,  # 30 seconds
+            urgency=Notify.Urgency.CRITICAL,
+        )
+        return True
 
     def get_msmtp_command(self, msmtp_args, pretend=False):
         """Full msmtp command to run to send emails."""
