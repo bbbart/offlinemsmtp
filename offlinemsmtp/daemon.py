@@ -143,8 +143,10 @@ class Daemon:
                 message_path.unlink()
             elif send_cmd.returncode in PERMANENT_FAILURE_EXIT_CODES:
                 # Retrying is pointless, so take the message out of the queue
-                # instead of letting it fail again every interval.
-                self.fail_message(message_path, send_cmd.returncode, error_output)
+                # instead of letting it fail again every interval. If it cannot
+                # be moved aside, keep it queued rather than lose track of it.
+                if not self.fail_message(message_path, send_cmd.returncode, error_output):
+                    failed.append(message_path)
             else:
                 util.notify(
                     f"Message did not send. Putting message back into the "
@@ -182,24 +184,42 @@ class Daemon:
         It goes to the ``failed`` subdirectory of the outbox, next to a
         ``.err`` file holding msmtp's diagnostics, so that the mail itself is
         not lost and the reason for the rejection can still be looked up.
+
+        Returns whether the message was moved. A read-only or full outbox must
+        not take the daemon down with it: this runs on the inotify thread as
+        well as in the main loop, and an exception there would kill the watcher
+        and leave new messages unnoticed. The caller keeps the message queued
+        instead, which is what it did before permanent failures were
+        recognized, so nothing is lost while the outbox is unwritable.
         """
-        self.failed_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.failed_dir.mkdir(parents=True, exist_ok=True)
 
-        # Message names contain microseconds and the PID, so a name that is
-        # already taken should be impossible. Pick another one rather than
-        # overwrite mail if it happens anyway.
-        failed_path = self.failed_dir.joinpath(message_path.name)
-        attempt = 1
-        while failed_path.exists():
-            failed_path = self.failed_dir.joinpath(f"{message_path.name}.{attempt}")
-            attempt += 1
+            # Message names contain microseconds and the PID, so a name that is
+            # already taken should be impossible. Pick another one rather than
+            # overwrite mail if it happens anyway.
+            failed_path = self.failed_dir.joinpath(message_path.name)
+            attempt = 1
+            while failed_path.exists():
+                failed_path = self.failed_dir.joinpath(f"{message_path.name}.{attempt}")
+                attempt += 1
 
-        # Write the diagnostics first: a stray .err file is harmless, whereas a
-        # failed message without one gives no clue as to what went wrong.
-        failed_path.with_name(f"{failed_path.name}.err").write_text(
-            f"exit code: {returncode}\n{error_output}\n"
-        )
-        message_path.rename(failed_path)
+            # Write the diagnostics first: a stray .err file is harmless (a
+            # later attempt overwrites it), whereas a failed message without
+            # one gives no clue as to what went wrong.
+            failed_path.with_name(f"{failed_path.name}.err").write_text(
+                f"exit code: {returncode}\n{error_output}\n"
+            )
+            message_path.rename(failed_path)
+        except OSError as e:
+            util.notify(
+                f"Message was permanently rejected but could not be moved to "
+                f"{self.failed_dir}: {e}\n"
+                f"Keeping it in the queue.",
+                timeout=30000,  # 30 seconds
+                urgency=Notify.Urgency.CRITICAL,
+            )
+            return False
 
         util.notify(
             f"Message permanently rejected; moved to {failed_path}.\n"
@@ -207,6 +227,7 @@ class Daemon:
             timeout=30000,  # 30 seconds
             urgency=Notify.Urgency.CRITICAL,
         )
+        return True
 
     def get_msmtp_command(self, msmtp_args, pretend=False):
         """Full msmtp command to run to send emails."""
