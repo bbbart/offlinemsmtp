@@ -4,7 +4,6 @@ Allows you to use `msmtp` offline by queuing email until you have an internet
 connection.
 
 [![Lint and Build](https://github.com/bbbart/offlinemsmtp/actions/workflows/build.yaml/badge.svg)](https://github.com/bbbart/offlinemsmtp/actions/workflows/build.yaml)
-[![PyPi Version](https://img.shields.io/pypi/v/offlinemsmtp?color=4DC71F&logo=python&logoColor=fff)](https://pypi.org/project/offlinemsmtp/)
 [![AUR Version](https://img.shields.io/aur/version/offlinemsmtp?logo=linux&logoColor=fff)](https://aur.archlinux.org/packages/offlinemsmtp/)
 [![LiberaPay Donation Status](https://img.shields.io/liberapay/receives/sumner.svg?logo=liberapay)](https://liberapay.com/sumner/donate)
 
@@ -28,15 +27,20 @@ connection.
 
 ## Installation
 
-Using [PyPi](https://pypi.org/project/offlinemsmtp/):
-
-    pip install --user offlinemsmtp
-
-On Arch Linux, you can install the `offlinemsmtp` package from the
+On Arch Linux, install the `offlinemsmtp` package from the
 [AUR](https://aur.archlinux.org/packages/offlinemsmtp/). For example, if you use
 `yay`:
 
     yay -S offlinemsmtp
+
+Anywhere else, install straight from this repository:
+
+    pip install --user git+https://github.com/bbbart/offlinemsmtp
+
+**Not on PyPI.** The `offlinemsmtp` package on PyPI belongs to the original
+project and its last release was 0.4.0 in November 2022, so `pip install
+offlinemsmtp` gives you neither this fork nor anything recent. See
+[Relationship to the original project](#relationship-to-the-original-project).
 
 ## Run the daemon using systemd
 
@@ -137,6 +141,18 @@ offlinemsmtp accepts a number of command line arguments:
 
 See the [CONTRIBUTING.md](./CONTRIBUTING.md) document for details on how to
 contribute to the project.
+
+## Relationship to the original project
+
+This is a fork of [sumnerevans/offlinemsmtp][upstream], which is where every
+release up to 0.4.0 came from. As of its v1.0.0 the original has been
+[rewritten in Go][upstream-rewrite] and relicensed under MIT, and it can no
+longer be installed with `pip`. This fork continues the Python implementation
+under GPL3, so the two have diverged: their 1.x and this 0.x are different
+programs that happen to share a name and a purpose.
+
+[upstream]: https://github.com/sumnerevans/offlinemsmtp
+[upstream-rewrite]: https://github.com/sumnerevans/offlinemsmtp/releases/tag/v1.0.0
 
 ## Other projects
 
