@@ -1,3 +1,33 @@
+# Version 0.5.0
+
+* **Permanently rejected messages are no longer retried forever.** A message
+  the SMTP server rejects with a 5xx reply can never be delivered, but it went
+  straight back into the queue and was re-sent at every interval, raising a
+  critical notification each time. Such a message is now moved into the
+  `failed` subdirectory of the outbox, next to a `.err` file holding `msmtp`'s
+  diagnostics and the server's own reply. Nothing is ever deleted: move the
+  message back into the outbox to try it again. The distinction comes from
+  `msmtp`'s exit code, which is `EX_DATAERR` (65) for a 5xx reply and
+  `EX_UNAVAILABLE` (69) for a 4xx one.
+* Temporary failures — a 4xx reply, or a server that cannot be reached — still
+  stay in the queue and are retried, but no longer raise a `CRITICAL`
+  notification every time.
+* Notifications and the log now quote the SMTP server's own reply instead of
+  only `msmtp`'s exit code. `msmtp`'s output is captured and logged as a
+  warning, where it used to go to the daemon's own stderr.
+* **Fixed the daemon dying on a filesystem error.** Reading a queued message,
+  or deleting it after a successful send, can fail on a full or read-only
+  filesystem. That ended the process when it happened during the periodic
+  flush, and silently killed the inotify watcher when it happened there, after
+  which the daemon stayed up but never noticed new mail again. A single
+  message can no longer take down the flush. A message that was delivered but
+  could not be deleted is reported and dropped from the queue, so that it is
+  not delivered a second time.
+* Note that `msmtp` reports a rejection *after* the message body with
+  `EX_UNAVAILABLE` whatever the status code, so a 5xx at that point cannot be
+  told apart from a 4xx and is still retried. The same applies to
+  authentication failures. Both are limitations of `msmtp` itself.
+
 # Version 0.4.4
 
 * **Fixed silent mail loss when enqueueing multiple messages within the same
