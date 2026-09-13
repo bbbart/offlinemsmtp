@@ -10,8 +10,13 @@ NOTIFICATIONS_INITIALIZED = False
 _APP_NAME = "offlinemsmtp"
 
 
-def notify(message, timeout=None, urgency=Notify.Urgency.LOW):
-    """Creates and shows a ``gi.repository.Notify.Notification`` object."""
+def notify(message, timeout=None, urgency=Notify.Urgency.LOW, replace=None):
+    """Creates or updates, and shows, a ``gi.repository.Notify.Notification``.
+
+    Pass a notification returned by an earlier call as ``replace`` to update
+    that one in place. Sending a message otherwise leaves a trail of
+    notifications: one saying it is being sent, and another saying how it went.
+    """
     global NOTIFICATIONS_INITIALIZED
     logging.info(message)
 
@@ -24,10 +29,17 @@ def notify(message, timeout=None, urgency=Notify.Urgency.LOW):
             Notify.init(_APP_NAME)
             NOTIFICATIONS_INITIALIZED = True
 
-        # Create, show, and return the notification
-        notification = Notify.Notification.new(_APP_NAME, message)
-        if timeout:
-            notification.set_timeout(timeout)
+        if replace is not None:
+            # Reuse the notification that is already on screen, so that the
+            # desktop updates it rather than stacking a second one on top.
+            notification = replace
+            notification.update(_APP_NAME, message, None)
+        else:
+            notification = Notify.Notification.new(_APP_NAME, message)
+
+        # Always set the timeout: a replaced notification would otherwise keep
+        # the one it was given when it was the "Sending ..." message.
+        notification.set_timeout(timeout if timeout else Notify.EXPIRES_DEFAULT)
         notification.set_urgency(urgency)
         notification.show()
         return notification

@@ -10,7 +10,7 @@ import threading
 import time
 from pathlib import Path
 from queue import Queue
-from subprocess import PIPE, run
+from subprocess import PIPE, TimeoutExpired, run
 
 import gi
 import inotify.adapters
@@ -44,6 +44,16 @@ PERMANENT_FAILURE_EXIT_CODES = frozenset({EX_USAGE, EX_DATAERR})
 # rather than being retried forever or thrown away.
 FAILED_DIR_NAME = "failed"
 
+# How long msmtp gets to send one message before it is killed and the message
+# is put back in the queue. Without a limit one unresponsive server stalls the
+# whole flush, and with it the inotify thread, for as long as it stays
+# unresponsive.
+DEFAULT_SEND_TIMEOUT = 90  # seconds
+
+# The pretend run only prints the configuration and does not talk to the
+# network, so it has no business taking any time at all.
+PRETEND_TIMEOUT = 10  # seconds
+
 
 class Daemon:
     """Listens for changes to the outbox directory."""
@@ -56,6 +66,7 @@ class Daemon:
         self.send_mail_file = Path(args.send_mail_file).resolve() if args.send_mail_file else None
         self.root_dir = Path(args.dir).resolve()
         self.failed_dir = self.root_dir.joinpath(FAILED_DIR_NAME)
+        self.send_timeout = getattr(args, "send_timeout", DEFAULT_SEND_TIMEOUT)
 
         # Serializes flush_queue between the inotify watcher thread and the
         # periodic flush in the main loop.
@@ -146,12 +157,15 @@ class Daemon:
             msmtp_args = message_file.readline().decode()
             message_content = message_file.read()
 
-        if not self.can_send_message(msmtp_args, message_content):
+        subject = self.get_subject(message_content)
+
+        if not self.can_send_message(msmtp_args, message_content, subject):
             return True
 
-        # Create a sending notification that lives "forever". It will be
-        # closed when the msmtp process completes.
-        sending_notification = util.notify(f"Sending {message_path}...", timeout=600000)
+        # A notification that lives "forever". Every outcome below updates it
+        # in place, so that sending a message leaves one notification behind
+        # rather than a "Sending ..." followed by a second one.
+        sending = util.notify(f'Sending "{subject}"...', timeout=600000)
 
         # Send the message.
         try:
@@ -161,12 +175,27 @@ class Daemon:
                 input=message_content,
                 stderr=PIPE,
                 check=False,
+                timeout=self.send_timeout,
             )
-        finally:
-            # Close it even if msmtp could not be run at all, so that the
-            # notification does not sit there for its full ten minutes.
-            if sending_notification:
-                sending_notification.close()
+        except TimeoutExpired:
+            # run() has already killed msmtp. A server that stopped responding
+            # may well answer next time, so this counts as a temporary failure.
+            util.notify(
+                f'Sending "{subject}" took longer than {self.send_timeout} '
+                f"seconds and was aborted. Putting it back into the queue to "
+                f"try later.",
+                timeout=30000,  # 30 seconds
+                urgency=Notify.Urgency.NORMAL,
+                replace=sending,
+            )
+            return True
+        except Exception:
+            # msmtp could not be run at all. Take the notification off the
+            # screen rather than leave it there for its full ten minutes, and
+            # let the caller report the failure.
+            if sending:
+                sending.close()
+            raise
 
         # msmtp's diagnostics used to go to the daemon's own stderr. They are
         # captured now, so log them to keep them visible. msmtp already
@@ -177,7 +206,6 @@ class Daemon:
 
         # Determine whether or not the send was successful or not.
         if send_cmd.returncode == 0:
-            util.notify("Message sent successfully. Removing from queue.")
             try:
                 message_path.unlink()
             except OSError as e:
@@ -185,34 +213,51 @@ class Daemon:
                 # is the one failure where keeping it queued is wrong, because
                 # every retry would deliver another copy.
                 util.notify(
-                    f"Message was sent but {message_path} could not be "
+                    f'Sent "{subject}", but {message_path} could not be '
                     f"removed: {e}\n"
                     f"Delete it by hand, otherwise it is sent again the next "
                     f"time the daemon starts.",
                     timeout=30000,  # 30 seconds
                     urgency=Notify.Urgency.CRITICAL,
+                    replace=sending,
                 )
+            else:
+                util.notify(f'Sent "{subject}".', timeout=5000, replace=sending)
             return False
 
         if send_cmd.returncode in PERMANENT_FAILURE_EXIT_CODES:
             # Retrying is pointless, so take the message out of the queue
             # instead of letting it fail again every interval. If it cannot be
             # moved aside, keep it queued rather than lose track of it.
-            return not self.fail_message(message_path, send_cmd.returncode, error_output)
+            return not self.fail_message(
+                message_path, send_cmd.returncode, error_output, subject, replace=sending
+            )
 
         util.notify(
-            f"Message did not send. Putting message back into the "
-            f"queue to try later.\n"
+            f'"{subject}" did not send. Putting it back into the queue to try '
+            f"later.\n"
             f"{self.describe_failure(send_cmd.returncode, error_output)}",
             timeout=30000,  # 30 seconds
             urgency=Notify.Urgency.NORMAL,
+            replace=sending,
         )
         return True
 
     host_re = re.compile("host = (.*)")
     port_re = re.compile("port = (.*)")
-    subject_re = re.compile("Subject: (.*)")
+    subject_re = re.compile(r"^Subject:[ \t]*(.*)$", re.IGNORECASE)
     server_message_re = re.compile("^msmtp: server message: (.*)$", re.MULTILINE)
+
+    @classmethod
+    def get_subject(cls, message_content):
+        """The message's ``Subject`` header, to name it in notifications."""
+        for line in message_content.decode("utf-8", errors="replace").split("\n"):
+            if not line.strip():
+                # End of the headers. A "Subject:" line in the body is not one.
+                break
+            if subject_match := cls.subject_re.match(line):
+                return subject_match.group(1).strip()
+        return "<no subject>"
 
     @classmethod
     def describe_failure(cls, returncode, error_output):
@@ -226,7 +271,7 @@ class Daemon:
             return server_message.group(1)
         return f"Return Code: {returncode}"
 
-    def fail_message(self, message_path, returncode, error_output):
+    def fail_message(self, message_path, returncode, error_output, subject, replace=None):
         """Move a message that can never be sent out of the queue.
 
         It goes to the ``failed`` subdirectory of the outbox, next to a
@@ -261,19 +306,21 @@ class Daemon:
             message_path.rename(failed_path)
         except OSError as e:
             util.notify(
-                f"Message was permanently rejected but could not be moved to "
-                f"{self.failed_dir}: {e}\n"
+                f'"{subject}" was permanently rejected but could not be moved '
+                f"to {self.failed_dir}: {e}\n"
                 f"Keeping it in the queue.",
                 timeout=30000,  # 30 seconds
                 urgency=Notify.Urgency.CRITICAL,
+                replace=replace,
             )
             return False
 
         util.notify(
-            f"Message permanently rejected; moved to {failed_path}.\n"
+            f'"{subject}" was permanently rejected; moved to {failed_path}.\n'
             f"{self.describe_failure(returncode, error_output)}",
             timeout=30000,  # 30 seconds
             urgency=Notify.Urgency.CRITICAL,
+            replace=replace,
         )
         return True
 
@@ -287,17 +334,24 @@ class Daemon:
         args += ["-C", str(self.config_file), *msmtp_args.split()]
         return args
 
-    def can_send_message(self, msmtp_args, message_content):
+    def can_send_message(self, msmtp_args, message_content, subject):
         """Tests whether or not the computer can connect to the necessary server
         to send the given message.
         """
-        test_run = run(
-            self.get_msmtp_command(msmtp_args, pretend=True),
-            input=message_content,
-            stdout=PIPE,
-            stderr=PIPE,
-            check=False,
-        )
+        try:
+            test_run = run(
+                self.get_msmtp_command(msmtp_args, pretend=True),
+                input=message_content,
+                stdout=PIPE,
+                stderr=PIPE,
+                check=False,
+                timeout=PRETEND_TIMEOUT,
+            )
+        except TimeoutExpired:
+            logging.warning(
+                "msmtp did not print its configuration within %s seconds", PRETEND_TIMEOUT
+            )
+            return False
 
         host, port = None, None
         for line in test_run.stdout.decode("utf-8").split("\n"):
@@ -324,13 +378,6 @@ class Daemon:
 
         # Notify if it's not available.
         if socket_open != 0:
-            # Search for the subject in the message_content
-            subject = "<no subject>"
-            for line in message_content.decode("utf-8").split("\n"):
-                subject_match = self.subject_re.match(line)
-                if subject_match:
-                    subject = subject_match.group(1)
-
             util.notify(
                 f"Cannot connect to {host}:{port} to send message with " f'subject: "{subject}".',
                 timeout=5000,

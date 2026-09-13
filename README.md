@@ -21,7 +21,9 @@ connection.
 * When a new email message comes into the queue and you are already online,
   `offlinemsmtp` will send it immediately.
 * Integrates with system notifications so that you are notified when mail is
-  being sent.
+  being sent. Notifications name the message by its subject, and the "Sending
+  ..." notification is updated in place with the outcome instead of leaving a
+  second one behind.
 * Disable/enable sending of mail by the presence/absence of a file. This is
   useful if you want to have some sort of "offline mode".
 
@@ -131,6 +133,10 @@ offlinemsmtp accepts a number of command line arguments:
 - `-C FILE`, `--file FILE` - the msmtp configuration file to use.
 - `--send-mail-file FILE` - only send mail if this file exists (defaults to
   `None` meaning that no file is required for mail sending to be enabled)
+- `--send-timeout SECONDS` - the number of seconds `msmtp` is given to send a
+  single message before it is aborted and the message is put back in the queue.
+  Defaults to 90. Without this, a server that accepts a connection and then
+  stops responding stalls the queue indefinitely.
 - All remaining arguments are passed to `msmtp`. The `-C` argument is
   automatically passed to `msmtp`.
 - Anything after a special `--` argument will be passed to `msmtp`. This allows
