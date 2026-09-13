@@ -133,6 +133,7 @@ class Daemon:
                     f"queue; see the log for details.",
                     timeout=30000,  # 30 seconds
                     urgency=Notify.Urgency.CRITICAL,
+                    log_level=logging.ERROR,
                 )
                 keep_queued = True
 
@@ -187,6 +188,7 @@ class Daemon:
                 timeout=30000,  # 30 seconds
                 urgency=Notify.Urgency.NORMAL,
                 replace=sending,
+                log_level=logging.WARNING,
             )
             return True
         except Exception:
@@ -220,6 +222,7 @@ class Daemon:
                     timeout=30000,  # 30 seconds
                     urgency=Notify.Urgency.CRITICAL,
                     replace=sending,
+                    log_level=logging.ERROR,
                 )
             else:
                 util.notify(f'Sent "{subject}".', timeout=5000, replace=sending)
@@ -312,6 +315,7 @@ class Daemon:
                 timeout=30000,  # 30 seconds
                 urgency=Notify.Urgency.CRITICAL,
                 replace=replace,
+                log_level=logging.ERROR,
             )
             return False
 
@@ -321,6 +325,7 @@ class Daemon:
             timeout=30000,  # 30 seconds
             urgency=Notify.Urgency.CRITICAL,
             replace=replace,
+            log_level=logging.WARNING,
         )
         return True
 

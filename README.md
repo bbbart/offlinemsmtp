@@ -114,6 +114,10 @@ notification. Alongside the message it writes a `.err` file containing
     msmtp: server message: 550 5.1.1 <nosuch@example.com>: no such user here
     msmtp: could not send mail (account personal from /home/you/.msmtprc)
 
+Each of these is logged at `WARNING` as well as being notified, so it shows up
+in the journal (`journalctl --user -u offlinemsmtp`) even if you were not at
+your screen when it happened.
+
 Nothing in `failed` is ever deleted, so no mail is lost. It is up to you to
 inspect these messages and clean them up. To retry one — after fixing the
 recipient's address, for instance — move the message file (not its `.err` file)

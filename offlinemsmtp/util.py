@@ -10,15 +10,26 @@ NOTIFICATIONS_INITIALIZED = False
 _APP_NAME = "offlinemsmtp"
 
 
-def notify(message, timeout=None, urgency=Notify.Urgency.LOW, replace=None):
+def notify(
+    message,
+    timeout=None,
+    urgency=Notify.Urgency.LOW,
+    replace=None,
+    log_level=logging.INFO,
+):
     """Creates or updates, and shows, a ``gi.repository.Notify.Notification``.
 
     Pass a notification returned by an earlier call as ``replace`` to update
     that one in place. Sending a message otherwise leaves a trail of
     notifications: one saying it is being sent, and another saying how it went.
+
+    The message is logged as well as shown, at ``log_level``. Raise that above
+    the default for anything the user must not miss: the daemon runs at
+    ``WARNING`` unless told otherwise, so an ``INFO`` message reaches nobody
+    who was not watching their screen at the time.
     """
     global NOTIFICATIONS_INITIALIZED
-    logging.info(message)
+    logging.log(log_level, message)
 
     if SILENT:
         return None
