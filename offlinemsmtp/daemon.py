@@ -61,7 +61,6 @@ class Daemon:
     def __init__(self, args):
         """Initialize the daemon."""
         self.connected = False
-        self.silent = args.silent
         self.config_file = Path(args.file).resolve()
         self.send_mail_file = Path(args.send_mail_file).resolve() if args.send_mail_file else None
         self.root_dir = Path(args.dir).resolve()

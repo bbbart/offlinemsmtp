@@ -29,6 +29,11 @@ def notify(
     who was not watching their screen at the time.
     """
     global NOTIFICATIONS_INITIALIZED
+
+    # Log before the SILENT check, never after it: --silent suppresses the
+    # desktop notification and nothing else. Silencing the log is what
+    # --loglevel is for, and a message the user must not miss has to survive
+    # a daemon that was started with notifications turned off.
     logging.log(log_level, message)
 
     if SILENT:
