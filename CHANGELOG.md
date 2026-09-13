@@ -1,3 +1,33 @@
+# Version 0.5.1
+
+* **`msmtp` can no longer block the daemon indefinitely.** There was no timeout
+  on the `msmtp` subprocess, so a server that accepted the connection and then
+  stopped responding stalled the queue flush — and with it the inotify watcher,
+  which meant new mail went unnoticed too — for as long as it stayed silent.
+  `msmtp` now gets `--send-timeout` seconds (90 by default), after which it is
+  killed and the message goes back into the queue. The pretend run that works
+  out which server to connect to is bounded at ten seconds; it only prints the
+  configuration and never touches the network.
+* Notifications name the message by its `Subject` header instead of by its
+  outbox filename, which was a timestamp and a process id and said nothing
+  about which mail was meant. The header parsing was fixed along the way: it
+  stops at the end of the headers (a `Subject:` line in the body used to win),
+  it takes the first such header rather than the last, it accepts the
+  whitespace that RFC 5322 makes optional after the colon (`Subject:like
+  this`), it matches case-insensitively, and it no longer raises on a message
+  that is not valid UTF-8.
+* Sending a message leaves one notification behind rather than two: the
+  "Sending ..." notification is now updated in place with the outcome.
+* **`offlinemsmtp` is not published on PyPI.** The `offlinemsmtp` package there
+  belongs to the original project and has not been updated since 0.4.0 in
+  November 2022, so `pip install offlinemsmtp` installed neither this fork nor
+  anything recent. The README now points at the AUR package and at `pip install
+  git+https://github.com/bbbart/offlinemsmtp`, and explains how this fork
+  relates to the original, which has since been rewritten in Go, relicensed
+  under MIT and dropped `pip` installation altogether.
+* The GitHub Actions workflow no longer carries a deploy job, which could never
+  have worked without rights on that PyPI project.
+
 # Version 0.5.0
 
 * **Permanently rejected messages are no longer retried forever.** A message
