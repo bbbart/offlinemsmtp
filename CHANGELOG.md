@@ -1,3 +1,29 @@
+# Version 0.5.2
+
+* **Mail parked in `failed/` now leaves a trace in the log.** Notifications
+  were logged at `INFO`, and the daemon runs at `WARNING` unless told
+  otherwise — the packaged systemd unit passes no `--loglevel` at all — so the
+  most consequential thing this daemon does, taking a message out of the queue
+  and setting it aside, was recorded nowhere. Anyone who was not looking at
+  their screen when the notification appeared found an unexplained `failed/`
+  directory and nothing anywhere to explain it. Permanent rejections are now
+  logged at `WARNING`, and a message that was delivered but could not be
+  removed from the queue, or rejected for good with nowhere to put it, at
+  `ERROR`. Routine operation stays silent: successful sends produce no output
+  at the default level.
+* **A send that timed out was not logged at all.** `msmtp` is killed before it
+  writes anything to stderr, so unlike every other failure it left no
+  diagnostic of its own behind. It is logged at `WARNING` now.
+* `--silent` suppresses desktop notifications and nothing else. It has never
+  silenced logging and must not, since a parked message has to reach the
+  journal whether or not the daemon was started with notifications turned off.
+  The README and `--help` both claimed it disabled "all logging and
+  notifications"; use `--loglevel` to quieten the log.
+* `util.notify` no longer logs the message it shows: it notifies, and callers
+  log for themselves at whatever level the event deserves. `--silent` therefore
+  cannot suppress a log entry even by accident. Log records also name the
+  module the event actually happened in, rather than `util` for every one.
+
 # Version 0.5.1
 
 * **`msmtp` can no longer block the daemon indefinitely.** There was no timeout
