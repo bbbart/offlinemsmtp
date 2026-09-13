@@ -10,31 +10,18 @@ NOTIFICATIONS_INITIALIZED = False
 _APP_NAME = "offlinemsmtp"
 
 
-def notify(
-    message,
-    timeout=None,
-    urgency=Notify.Urgency.LOW,
-    replace=None,
-    log_level=logging.INFO,
-):
+def notify(message, timeout=None, urgency=Notify.Urgency.LOW, replace=None):
     """Creates or updates, and shows, a ``gi.repository.Notify.Notification``.
 
     Pass a notification returned by an earlier call as ``replace`` to update
     that one in place. Sending a message otherwise leaves a trail of
     notifications: one saying it is being sent, and another saying how it went.
 
-    The message is logged as well as shown, at ``log_level``. Raise that above
-    the default for anything the user must not miss: the daemon runs at
-    ``WARNING`` unless told otherwise, so an ``INFO`` message reaches nobody
-    who was not watching their screen at the time.
+    This notifies and nothing else; it deliberately does not log. ``--silent``
+    turns notifications off and must not be able to take the log with it, so
+    callers log for themselves, at whatever level the message deserves.
     """
     global NOTIFICATIONS_INITIALIZED
-
-    # Log before the SILENT check, never after it: --silent suppresses the
-    # desktop notification and nothing else. Silencing the log is what
-    # --loglevel is for, and a message the user must not miss has to survive
-    # a daemon that was started with notifications turned off.
-    logging.log(log_level, message)
 
     if SILENT:
         return None
