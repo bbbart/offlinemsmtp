@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from offlinemsmtp import util
-from offlinemsmtp.daemon import Daemon
+from offlinemsmtp.daemon import DEFAULT_SEND_TIMEOUT, Daemon
 
 
 def main():
@@ -44,6 +44,16 @@ def main():
     )
     parser.add_argument(
         "--send-mail-file", default=None, help="only send mail if this file exists"
+    )
+    parser.add_argument(
+        "--send-timeout",
+        type=int,
+        default=DEFAULT_SEND_TIMEOUT,
+        help=(
+            "set the number of seconds msmtp is given to send a single message before it"
+            f" is aborted and the message is put back in the queue. Defaults to"
+            f" {DEFAULT_SEND_TIMEOUT}."
+        ),
     )
     parser.add_argument("-l", "--logfile", help="the filename to send logs to")
     parser.add_argument(
