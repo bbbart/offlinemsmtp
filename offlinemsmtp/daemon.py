@@ -245,7 +245,7 @@ class Daemon:
 
     host_re = re.compile("host = (.*)")
     port_re = re.compile("port = (.*)")
-    subject_re = re.compile("Subject: (.*)")
+    subject_re = re.compile(r"^Subject:[ \t]*(.*)$", re.IGNORECASE)
     server_message_re = re.compile("^msmtp: server message: (.*)$", re.MULTILINE)
 
     @classmethod

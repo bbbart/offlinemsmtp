@@ -11,7 +11,7 @@ _APP_NAME = "offlinemsmtp"
 
 
 def notify(message, timeout=None, urgency=Notify.Urgency.LOW, replace=None):
-    """Creates and shows a ``gi.repository.Notify.Notification`` object.
+    """Creates or updates, and shows, a ``gi.repository.Notify.Notification``.
 
     Pass a notification returned by an earlier call as ``replace`` to update
     that one in place. Sending a message otherwise leaves a trail of
