@@ -61,7 +61,6 @@ class Daemon:
     def __init__(self, args):
         """Initialize the daemon."""
         self.connected = False
-        self.silent = args.silent
         self.config_file = Path(args.file).resolve()
         self.send_mail_file = Path(args.send_mail_file).resolve() if args.send_mail_file else None
         self.root_dir = Path(args.dir).resolve()
@@ -107,6 +106,7 @@ class Daemon:
 
     def _flush_queue(self):
         if not self.send_enabled():
+            logging.info("Sending email disabled")
             util.notify("Sending email disabled", timeout=5000)
             return
 
@@ -128,6 +128,8 @@ class Daemon:
                 # better to report it and retry than to set aside mail that is
                 # probably still deliverable once the cause is fixed.
                 logging.exception("Could not process %s", message_path)
+                # logging.exception above already recorded this at ERROR,
+                # with the traceback, so this only notifies.
                 util.notify(
                     f"Could not process {message_path}. Keeping it in the "
                     f"queue; see the log for details.",
@@ -165,6 +167,7 @@ class Daemon:
         # A notification that lives "forever". Every outcome below updates it
         # in place, so that sending a message leaves one notification behind
         # rather than a "Sending ..." followed by a second one.
+        logging.info('Sending "%s"...', subject)
         sending = util.notify(f'Sending "{subject}"...', timeout=600000)
 
         # Send the message.
@@ -180,10 +183,16 @@ class Daemon:
         except TimeoutExpired:
             # run() has already killed msmtp. A server that stopped responding
             # may well answer next time, so this counts as a temporary failure.
-            util.notify(
+            message = (
                 f'Sending "{subject}" took longer than {self.send_timeout} '
                 f"seconds and was aborted. Putting it back into the queue to "
-                f"try later.",
+                f"try later."
+            )
+            # msmtp is killed before it writes anything to stderr, so unlike
+            # every other failure this leaves no diagnostic of its own.
+            logging.warning(message)
+            util.notify(
+                message,
                 timeout=30000,  # 30 seconds
                 urgency=Notify.Urgency.NORMAL,
                 replace=sending,
@@ -212,16 +221,21 @@ class Daemon:
                 # The message did go out, so it must not be sent again: this
                 # is the one failure where keeping it queued is wrong, because
                 # every retry would deliver another copy.
-                util.notify(
+                message = (
                     f'Sent "{subject}", but {message_path} could not be '
                     f"removed: {e}\n"
                     f"Delete it by hand, otherwise it is sent again the next "
-                    f"time the daemon starts.",
+                    f"time the daemon starts."
+                )
+                logging.error(message)
+                util.notify(
+                    message,
                     timeout=30000,  # 30 seconds
                     urgency=Notify.Urgency.CRITICAL,
                     replace=sending,
                 )
             else:
+                logging.info('Sent "%s".', subject)
                 util.notify(f'Sent "{subject}".', timeout=5000, replace=sending)
             return False
 
@@ -233,10 +247,16 @@ class Daemon:
                 message_path, send_cmd.returncode, error_output, subject, replace=sending
             )
 
-        util.notify(
+        message = (
             f'"{subject}" did not send. Putting it back into the queue to try '
             f"later.\n"
-            f"{self.describe_failure(send_cmd.returncode, error_output)}",
+            f"{self.describe_failure(send_cmd.returncode, error_output)}"
+        )
+        # msmtp's own stderr was logged at WARNING above, so this need not
+        # repeat the event at that level.
+        logging.info(message)
+        util.notify(
+            message,
             timeout=30000,  # 30 seconds
             urgency=Notify.Urgency.NORMAL,
             replace=sending,
@@ -305,19 +325,27 @@ class Daemon:
             )
             message_path.rename(failed_path)
         except OSError as e:
-            util.notify(
+            message = (
                 f'"{subject}" was permanently rejected but could not be moved '
                 f"to {self.failed_dir}: {e}\n"
-                f"Keeping it in the queue.",
+                f"Keeping it in the queue."
+            )
+            logging.error(message)
+            util.notify(
+                message,
                 timeout=30000,  # 30 seconds
                 urgency=Notify.Urgency.CRITICAL,
                 replace=replace,
             )
             return False
 
-        util.notify(
+        message = (
             f'"{subject}" was permanently rejected; moved to {failed_path}.\n'
-            f"{self.describe_failure(returncode, error_output)}",
+            f"{self.describe_failure(returncode, error_output)}"
+        )
+        logging.warning(message)
+        util.notify(
+            message,
             timeout=30000,  # 30 seconds
             urgency=Notify.Urgency.CRITICAL,
             replace=replace,
@@ -378,15 +406,17 @@ class Daemon:
 
         # Notify if it's not available.
         if socket_open != 0:
-            util.notify(
-                f"Cannot connect to {host}:{port} to send message with " f'subject: "{subject}".',
-                timeout=5000,
+            message = (
+                f"Cannot connect to {host}:{port} to send message with " f'subject: "{subject}".'
             )
+            logging.info(message)
+            util.notify(message, timeout=5000)
         return socket_open == 0
 
     @staticmethod
     def run(args):
         """Run the offlinemsmtp daemon."""
+        logging.info("offlinemsmtp daemon started")
         util.notify("offlinemsmtp daemon started")
         # Listen on the outbox directory for new files.
         daemon = Daemon(args)

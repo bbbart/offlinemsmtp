@@ -24,7 +24,10 @@ def main():
         "-s",
         "--silent",
         action="store_true",
-        help="set to disable all logging and notifications",
+        help=(
+            "set to disable desktop notifications. Logging is not affected; use"
+            " --loglevel for that."
+        ),
     )
     parser.add_argument(
         "-i",

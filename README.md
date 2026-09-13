@@ -114,6 +114,10 @@ notification. Alongside the message it writes a `.err` file containing
     msmtp: server message: 550 5.1.1 <nosuch@example.com>: no such user here
     msmtp: could not send mail (account personal from /home/you/.msmtprc)
 
+Each of these is logged at `WARNING` as well as being notified, so it shows up
+in the journal (`journalctl --user -u offlinemsmtp`) even if you were not at
+your screen when it happened.
+
 Nothing in `failed` is ever deleted, so no mail is lost. It is up to you to
 inspect these messages and clean them up. To retry one — after fixing the
 recipient's address, for instance — move the message file (not its `.err` file)
@@ -127,7 +131,8 @@ offlinemsmtp accepts a number of command line arguments:
 - `-o DIR`, `--outbox-directory DIR` - set the directory to use as the outbox.
   Defaults to `~/.offlinemsmtp-outbox`.
 - `-d`, `--daemon` - run the offlinemsmtp daemon.
-- `-s`, `--silent` - set to disable all logging and notifications.
+- `-s`, `--silent` - set to disable desktop notifications. Logging is not
+  affected: use `-m`/`--loglevel` for that.
 - `-i INTERVAL`, `--interval INTERVAL` - set the interval (in seconds) at which
   to attempt to flush the send queue. Defaults to 60.
 - `-C FILE`, `--file FILE` - the msmtp configuration file to use.

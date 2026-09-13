@@ -16,9 +16,12 @@ def notify(message, timeout=None, urgency=Notify.Urgency.LOW, replace=None):
     Pass a notification returned by an earlier call as ``replace`` to update
     that one in place. Sending a message otherwise leaves a trail of
     notifications: one saying it is being sent, and another saying how it went.
+
+    This notifies and nothing else; it deliberately does not log. ``--silent``
+    turns notifications off and must not be able to take the log with it, so
+    callers log for themselves, at whatever level the message deserves.
     """
     global NOTIFICATIONS_INITIALIZED
-    logging.info(message)
 
     if SILENT:
         return None
