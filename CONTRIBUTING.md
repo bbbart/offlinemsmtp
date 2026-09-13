@@ -127,11 +127,13 @@ Commit messages should be formatted as follows:
 
 ### GitHub Actions Workflows
 
-This project uses two GitHub Actions workflows for building, testing, and
-deploying the application to PyPi. A brief description of each of the workflows
-is as follows:
+This project has one GitHub Actions workflow:
 
-* `build.yaml` - lint, build, and (if a release) deploy the project to PyPi
+* `build.yaml` - lint and build the project
+
+Releases are not published to PyPi: the `offlinemsmtp` package there belongs to
+the upstream project. See [Relationship to the original
+project](./README.md#relationship-to-the-original-project).
 
 [black]: https://github.com/psf/black
 [flake8]: https://github.com/pycqa/flake8
