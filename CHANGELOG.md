@@ -1,3 +1,16 @@
+# Version 0.5.3
+
+* **Routine notifications no longer stay in the notification history.**
+  Notification daemons that keep a history, such as SwayNC, mako and GNOME
+  Shell, hold every notification they are given until the user clears it by
+  hand; the timeout only takes it off the screen. Every message sent therefore
+  left a `Sent "..."` behind for good, which buries the notifications that do
+  have to be noticed. The messages that only report routine progress and
+  success are marked transient now, so they are shown and then forgotten:
+  `Sending "..."`, `Sent "..."`, `Sending email disabled` and `offlinemsmtp
+  daemon started`. Everything that reports a failure is unchanged and stays in
+  the history.
+
 # Version 0.5.2
 
 * **Mail parked in `failed/` now leaves a trace in the log.** Notifications
