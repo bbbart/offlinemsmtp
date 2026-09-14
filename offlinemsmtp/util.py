@@ -3,19 +3,26 @@ import logging
 import gi
 
 gi.require_version("Notify", "0.7")
-from gi.repository import Notify
+from gi.repository import GLib, Notify
 
 SILENT = False
 NOTIFICATIONS_INITIALIZED = False
 _APP_NAME = "offlinemsmtp"
 
 
-def notify(message, timeout=None, urgency=Notify.Urgency.LOW, replace=None):
+def notify(message, timeout=None, urgency=Notify.Urgency.LOW, replace=None, transient=False):
     """Creates or updates, and shows, a ``gi.repository.Notify.Notification``.
 
     Pass a notification returned by an earlier call as ``replace`` to update
     that one in place. Sending a message otherwise leaves a trail of
     notifications: one saying it is being sent, and another saying how it went.
+
+    Set ``transient`` for a message that is worth showing but not worth
+    keeping. Notification daemons that hold a history, such as SwayNC, mako or
+    GNOME Shell, leave every notification in it until the user clears it by
+    hand; the timeout only takes the message off the screen. A transient
+    notification is shown and then forgotten, so that routine progress and
+    success messages do not pile up where the failures have to be noticed.
 
     This notifies and nothing else; it deliberately does not log. ``--silent``
     turns notifications off and must not be able to take the log with it, so
@@ -44,6 +51,10 @@ def notify(message, timeout=None, urgency=Notify.Urgency.LOW, replace=None):
         # the one it was given when it was the "Sending ..." message.
         notification.set_timeout(timeout if timeout else Notify.EXPIRES_DEFAULT)
         notification.set_urgency(urgency)
+        # Set on every call, and not only when it is wanted: a replaced
+        # notification keeps the hints it was given, so a "Sending ..." that
+        # turns into a failure must lose the transient hint again.
+        notification.set_hint("transient", GLib.Variant.new_boolean(transient))
         notification.show()
         return notification
     except Exception as e:
