@@ -23,7 +23,9 @@ connection.
 * Integrates with system notifications so that you are notified when mail is
   being sent. Notifications name the message by its subject, and the "Sending
   ..." notification is updated in place with the outcome instead of leaving a
-  second one behind.
+  second one behind. Routine messages are marked transient, so notification
+  daemons that keep a history do not collect a "Sent ..." for every message
+  you ever sent. Anything that went wrong stays in the history.
 * Disable/enable sending of mail by the presence/absence of a file. This is
   useful if you want to have some sort of "offline mode".
 

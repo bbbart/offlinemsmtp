@@ -107,7 +107,7 @@ class Daemon:
     def _flush_queue(self):
         if not self.send_enabled():
             logging.info("Sending email disabled")
-            util.notify("Sending email disabled", timeout=5000)
+            util.notify("Sending email disabled", timeout=5000, transient=True)
             return
 
         failed = []
@@ -166,9 +166,11 @@ class Daemon:
 
         # A notification that lives "forever". Every outcome below updates it
         # in place, so that sending a message leaves one notification behind
-        # rather than a "Sending ..." followed by a second one.
+        # rather than a "Sending ..." followed by a second one. It is transient
+        # while it reports progress; the outcomes that are worth keeping turn
+        # that off again.
         logging.info('Sending "%s"...', subject)
-        sending = util.notify(f'Sending "{subject}"...', timeout=600000)
+        sending = util.notify(f'Sending "{subject}"...', timeout=600000, transient=True)
 
         # Send the message.
         try:
@@ -236,7 +238,7 @@ class Daemon:
                 )
             else:
                 logging.info('Sent "%s".', subject)
-                util.notify(f'Sent "{subject}".', timeout=5000, replace=sending)
+                util.notify(f'Sent "{subject}".', timeout=5000, replace=sending, transient=True)
             return False
 
         if send_cmd.returncode in PERMANENT_FAILURE_EXIT_CODES:
@@ -417,7 +419,7 @@ class Daemon:
     def run(args):
         """Run the offlinemsmtp daemon."""
         logging.info("offlinemsmtp daemon started")
-        util.notify("offlinemsmtp daemon started")
+        util.notify("offlinemsmtp daemon started", transient=True)
         # Listen on the outbox directory for new files.
         daemon = Daemon(args)
         observer = inotify.adapters.Inotify()
