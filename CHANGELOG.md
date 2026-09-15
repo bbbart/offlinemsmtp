@@ -1,3 +1,16 @@
+# Version 0.5.4
+
+* **Notifications name the message by its real subject.** The `Subject` header
+  was read with a regular expression over one line of the raw message, but that
+  header is rarely the subject itself: anything outside US-ASCII travels as
+  RFC 2047 encoded-words, and a long subject is folded over several lines. Any
+  message with an accented letter, a dash, or simply a long subject was
+  therefore announced as `Sent "Re: Aangifte 104.5 =?utf-8?B?4oCUIHZlcnZy?="` —
+  encoded-word debris, cut off at the first fold. The header is now read with
+  the `email` package and its encoded-words decoded, so the notification shows
+  the subject the way it was typed. Folding whitespace is collapsed into single
+  spaces, since a notification is one line of text rather than a mail header.
+
 # Version 0.5.3
 
 * **Routine notifications no longer stay in the notification history.**
