@@ -8,6 +8,8 @@ import re
 import socket
 import threading
 import time
+from email.header import decode_header
+from email.parser import BytesHeaderParser
 from pathlib import Path
 from queue import Queue
 from subprocess import PIPE, TimeoutExpired, run
@@ -267,19 +269,46 @@ class Daemon:
 
     host_re = re.compile("host = (.*)")
     port_re = re.compile("port = (.*)")
-    subject_re = re.compile(r"^Subject:[ \t]*(.*)$", re.IGNORECASE)
     server_message_re = re.compile("^msmtp: server message: (.*)$", re.MULTILINE)
 
-    @classmethod
-    def get_subject(cls, message_content):
-        """The message's ``Subject`` header, to name it in notifications."""
-        for line in message_content.decode("utf-8", errors="replace").split("\n"):
-            if not line.strip():
-                # End of the headers. A "Subject:" line in the body is not one.
-                break
-            if subject_match := cls.subject_re.match(line):
-                return subject_match.group(1).strip()
-        return "<no subject>"
+    @staticmethod
+    def get_subject(message_content):
+        """The message's ``Subject`` header, to name it in notifications.
+
+        The header is read with the ``email`` package rather than by hand, so
+        that a subject the mail user agent had to encode is shown the way the
+        user typed it. Anything outside US-ASCII is sent as RFC 2047
+        encoded-words, and a long subject is folded over several lines; a
+        single regular expression over one line therefore reported
+        ``Re: Aangifte =?utf-8?B?4oCUIHZlcnZy?=`` where the subject read
+        ``Re: Aangifte \u2014 vervreemding ...``.
+
+        Parsing headers never raises: the parser accepts whatever it is given,
+        and an encoded-word naming a character set this machine does not know,
+        or holding bytes that character set cannot represent, falls back to
+        replacement characters instead of failing.
+        """
+        headers = BytesHeaderParser().parsebytes(message_content)
+        raw_subject = headers.get("Subject")
+        if raw_subject is None:
+            return "<no subject>"
+
+        decoded = []
+        for part, charset in decode_header(raw_subject):
+            if isinstance(part, bytes):
+                try:
+                    decoded.append(part.decode(charset or "utf-8", errors="replace"))
+                except LookupError:
+                    # An encoded-word naming a character set Python does not
+                    # have. The bytes are worth more than nothing.
+                    decoded.append(part.decode("utf-8", errors="replace"))
+            else:
+                decoded.append(part)
+
+        # Collapse the folding whitespace, and any other run of it, into single
+        # spaces: a notification is one line of text, not a mail header.
+        subject = " ".join("".join(decoded).split())
+        return subject or "<no subject>"
 
     @classmethod
     def describe_failure(cls, returncode, error_output):
